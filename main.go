@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/line/line-bot-sdk-go/linebot"
 )
@@ -37,17 +38,21 @@ var (
 
 func main() {
 	var err error
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 
 	// Initialize LINE Bot Client
-	channelSecret := "5ad6c664cb50426b820adc87f1be70c7"
-	channelToken := "1OCW+4wHULcJbXPT1hnRCsNs4lH34qPhBMkr/0w6hP0L98aqKV8j2aSFuyJdKc9LC7kQ9zWBHW0NBtQ1GyVuXOdGrH0vUbemhee6Xdc37WONzASa1Q/couQA0v9n0/kz1n5fSpa8ukGK45ybV0wj2QdB04t89/1O/w1cDnyilFU="
+	channelSecret := os.Getenv("LINE_CHANNEL_SECRET")
+	channelToken := os.Getenv("LINE_CHANNEL_TOKEN")
 	bot, err = linebot.New(channelSecret, channelToken)
 	if err != nil {
 		log.Fatalf("Error creating LINE bot client: %v", err)
 	}
 
 	// Connect to PostgreSQL
-	dbConnStr := "postgres://postgres:Suppapith2@localhost:5432/file_manager?sslmode=disable"
+	dbConnStr := os.Getenv("DB_CONN_STR")
 	dbconn, err = sql.Open("postgres", dbConnStr)
 	if err != nil {
 		log.Fatalf("Error connecting to PostgreSQL: %v", err)
@@ -441,11 +446,21 @@ func updateFileURL(filename, url string) error {
 }
 
 func initR2() (*s3.Client, string, error) {
+	// Load R2 credentials from environment variables
+	accessKeyID := os.Getenv("R2_ACCESS_KEY_ID")
+	secretAccessKey := os.Getenv("R2_SECRET_ACCESS_KEY")
+	baseEndpoint := os.Getenv("R2_BASE_ENDPOINT")
+	bucketName := os.Getenv("R2_BUCKET_NAME")
+
+	if accessKeyID == "" || secretAccessKey == "" || baseEndpoint == "" || bucketName == "" {
+		return nil, "", fmt.Errorf("missing R2 environment variables")
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion("auto"),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			"3ba7d5427f34a754ca877390945b67e5",
-			"2c202e05c96a3b0603168a4d6e0446389e29b67ae61814ae36c2abc9a4bda40c",
+			accessKeyID,
+			secretAccessKey,
 			"",
 		)),
 	)
@@ -453,13 +468,12 @@ func initR2() (*s3.Client, string, error) {
 		return nil, "", fmt.Errorf("failed to load R2 configuration: %w", err)
 	}
 
-	// ✅ Use BaseEndpoint (New Method)
+	// Use BaseEndpoint (New Method)
 	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String("https://62aec46dee2be140c039696df2e6a205.r2.cloudflarestorage.com")
+		o.BaseEndpoint = aws.String(baseEndpoint)
 		o.UsePathStyle = true // Required for R2
 	})
 
-	bucketName := "line-bot-datababa"
 	return s3Client, bucketName, nil
 }
 
